@@ -33,8 +33,9 @@ android {
                 arguments += "-DGGML_CPU_ALL_VARIANTS=ON"
                 arguments += "-DGGML_CPU_KLEIDIAI=ON"
                 arguments += "-DGGML_LLAMAFILE=OFF"
-                // Vulkan GPU acceleration
-                arguments += "-DGGML_VULKAN=ON"
+                // OpenCL GPU acceleration (optimized for Adreno)
+                arguments += "-DGGML_OPENCL=ON"
+                arguments += "-DGGML_OPENCL_USE_ADRENO_KERNELS=ON"
             }
         }
         aarMetadata {
@@ -58,6 +59,10 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        // Exclude OpenCL stub library - we use the device's /vendor/lib64/libOpenCL.so at runtime
+        jniLibs {
+            excludes += "**/libOpenCL.so"
         }
     }
 

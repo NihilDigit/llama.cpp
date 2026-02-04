@@ -16,9 +16,11 @@ data class LlamaRuntimeConfig(
     val enableThinking: Boolean = false,
     /**
      * Number of layers to offload to GPU.
-     * 0 = CPU only (default, Vulkan has compatibility issues on some devices)
+     * 0 = CPU only
      * -1 = all layers on GPU
      * positive value = specific number of layers
+     *
+     * Default: 0 (CPU only)
      */
     val nGpuLayers: Int = 0
 )

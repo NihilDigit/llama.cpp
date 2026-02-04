@@ -113,6 +113,27 @@ class LlmSession(
         }
     }
 
+    /**
+     * Reload model with different GPU layers setting.
+     * This is useful for benchmarking CPU vs GPU performance.
+     * @param nGpuLayers 0 = CPU only, 99/-1 = all layers on GPU
+     */
+    @Synchronized
+    fun reloadWithGpuLayers(nGpuLayers: Int) {
+        Log.i(TAG, "Reloading model with nGpuLayers=$nGpuLayers")
+        runBlocking {
+            engine.cleanUp()
+        }
+        runtimeConfig = runtimeConfig.copy(nGpuLayers = nGpuLayers)
+        runBlocking {
+            engine.updateGpuLayers(nGpuLayers)
+            engine.updateContextLength(runtimeConfig.contextLength)
+            engine.loadModel(modelPath.absolutePath)
+        }
+        applyRuntimeConfig()
+        Log.i(TAG, "Model reloaded with nGpuLayers=$nGpuLayers")
+    }
+
     override fun close() {
         release()
     }
