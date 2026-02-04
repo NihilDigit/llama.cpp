@@ -12,6 +12,24 @@ set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}"   CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}" CACHE STRING "" FORCE)
 
 # --------------------------------------------------------------------------
+# OpenCL for Android (NDK doesn't include OpenCL headers or library)
+# --------------------------------------------------------------------------
+if(GGML_OPENCL AND ANDROID)
+    # Use local OpenCL headers (downloaded from Khronos)
+    set(OPENCL_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/opencl-headers)
+    set(OpenCL_INCLUDE_DIR ${OPENCL_HEADERS_DIR} CACHE PATH "" FORCE)
+    message(STATUS "Using local OpenCL headers from: ${OPENCL_HEADERS_DIR}")
+
+    # Build a stub library for linking only
+    # The stub will be excluded from APK packaging via build.gradle.kts
+    # At runtime, the device's /vendor/lib64/libOpenCL.so will be used
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/opencl-stub opencl-stub-build)
+    set(OpenCL_LIBRARY OpenCL CACHE STRING "" FORCE)
+    set(OpenCL_LIBRARIES OpenCL CACHE STRING "" FORCE)
+    message(STATUS "Using OpenCL stub for linking (excluded from APK, system lib used at runtime)")
+endif()
+
+# --------------------------------------------------------------------------
 # Vulkan-Hpp for Android (NDK only provides C API, not C++ bindings)
 # --------------------------------------------------------------------------
 if(GGML_VULKAN AND ANDROID)
