@@ -1,13 +1,13 @@
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.jetbrains.kotlin.android)
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
 }
 
 android {
-    namespace = "com.arm.aichat"
+    namespace = "com.nihildigit.lightwayllama"
     compileSdk = 36
 
-    ndkVersion = "29.0.13113456"
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         minSdk = 33
@@ -16,7 +16,7 @@ android {
         consumerProguardFiles("consumer-rules.pro")
 
         ndk {
-             abiFilters += listOf("arm64-v8a", "x86_64")
+             abiFilters += listOf("arm64-v8a")
         }
         externalNativeBuild {
             cmake {
@@ -31,6 +31,7 @@ android {
                 arguments += "-DGGML_NATIVE=OFF"
                 arguments += "-DGGML_BACKEND_DL=ON"
                 arguments += "-DGGML_CPU_ALL_VARIANTS=ON"
+                arguments += "-DGGML_CPU_KLEIDIAI=OFF"
                 arguments += "-DGGML_LLAMAFILE=OFF"
             }
         }
@@ -41,19 +42,15 @@ android {
     externalNativeBuild {
         cmake {
             path("src/main/cpp/CMakeLists.txt")
-            version = "3.31.6"
+            version = "3.22.1"
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlin {
-        jvmToolchain(17)
-
-        compileOptions {
-            targetCompatibility = JavaVersion.VERSION_17
-        }
+    kotlinOptions {
+        jvmTarget = "11"
     }
 
     packaging {
@@ -71,7 +68,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

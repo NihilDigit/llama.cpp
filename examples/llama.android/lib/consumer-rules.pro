@@ -1,5 +1,5 @@
--keep class com.arm.aichat.* { *; }
--keep class com.arm.aichat.gguf.* { *; }
+-keep class com.nihildigit.lightwayllama.* { *; }
+-keep class com.nihildigit.lightwayllama.gguf.* { *; }
 
 -keepclasseswithmembernames class * {
     native <methods>;
