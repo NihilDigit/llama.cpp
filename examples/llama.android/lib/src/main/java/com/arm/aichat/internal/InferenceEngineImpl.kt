@@ -143,6 +143,12 @@ internal class InferenceEngineImpl private constructor(
     private external fun setContextLength(nCtx: Int)
 
     @FastNative
+    private external fun setGpuLayers(nGpuLayers: Int)
+
+    @FastNative
+    private external fun getGpuLayers(): Int
+
+    @FastNative
     private external fun unload()
 
     @FastNative
@@ -354,6 +360,18 @@ internal class InferenceEngineImpl private constructor(
     internal fun updateContextLength(nCtx: Int) {
         runBlocking(llamaDispatcher) {
             setContextLength(nCtx)
+        }
+    }
+
+    internal fun updateGpuLayers(nGpuLayers: Int) {
+        runBlocking(llamaDispatcher) {
+            setGpuLayers(nGpuLayers)
+        }
+    }
+
+    internal fun getCurrentGpuLayers(): Int {
+        return runBlocking(llamaDispatcher) {
+            getGpuLayers()
         }
     }
 
