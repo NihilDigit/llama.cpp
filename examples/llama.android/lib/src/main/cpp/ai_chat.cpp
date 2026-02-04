@@ -42,6 +42,7 @@ static llama_batch                        g_batch;
 static common_chat_templates_ptr          g_chat_templates;
 static common_sampler                   * g_sampler;
 static int                                g_context_size = DEFAULT_CONTEXT_SIZE;
+static int                                g_n_gpu_layers = 0;  // Default to CPU (Vulkan has issues on some Adreno GPUs)
 static common_params_sampling              g_sampling_params;
 static bool                               g_sampling_params_initialized = false;
 static common_chat_params                  g_last_chat_params;
@@ -69,13 +70,23 @@ Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_init(JNIEnv *env,
 
     // Initialize backends
     llama_backend_init();
-    LOGi("Backend initiated; Log handler set.");
+
+    // Log all available backends
+    LOGi("Available backends:");
+    for (size_t i = 0; i < ggml_backend_reg_count(); i++) {
+        auto *reg = ggml_backend_reg_get(i);
+        LOGi("  [%zu] %s", i, ggml_backend_reg_name(reg));
+    }
+
+    LOGi("Backend initiated; Log handler set. Default n_gpu_layers=%d", g_n_gpu_layers);
 }
 
 extern "C"
 JNIEXPORT jint JNICALL
 Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_load(JNIEnv *env, jobject, jstring jmodel_path) {
     llama_model_params model_params = llama_model_default_params();
+    model_params.n_gpu_layers = g_n_gpu_layers;
+    LOGi("%s: n_gpu_layers = %d", __func__, g_n_gpu_layers);
 
     const auto *model_path = env->GetStringUTFChars(jmodel_path, 0);
     LOGd("%s: Loading model from: \n%s\n", __func__, model_path);
@@ -865,6 +876,27 @@ Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_setContextLength(
         }
         g_context_size = n_ctx;
     }
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_setGpuLayers(
+        JNIEnv * /*env*/,
+        jobject /*unused*/,
+        jint n_gpu_layers) {
+    if (g_model != nullptr) {
+        LOGw("%s: model already loaded; new n_gpu_layers will apply after reload", __func__);
+    }
+    g_n_gpu_layers = n_gpu_layers;
+    LOGi("%s: n_gpu_layers set to %d", __func__, n_gpu_layers);
+}
+
+extern "C"
+JNIEXPORT jint JNICALL
+Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_getGpuLayers(
+        JNIEnv * /*env*/,
+        jobject /*unused*/) {
+    return g_n_gpu_layers;
 }
 
 static bool is_valid_utf8(const char *string) {

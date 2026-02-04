@@ -12,6 +12,32 @@ set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}"   CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}" CACHE STRING "" FORCE)
 
 # --------------------------------------------------------------------------
+# Vulkan-Hpp for Android (NDK only provides C API, not C++ bindings)
+# --------------------------------------------------------------------------
+if(GGML_VULKAN AND ANDROID)
+    # Use local vulkan.hpp (downloaded from Vulkan-Hpp v1.3.275)
+    set(VULKAN_HPP_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vulkan-hpp)
+    include_directories(SYSTEM ${VULKAN_HPP_DIR})
+    message(STATUS "Using local Vulkan-Hpp from: ${VULKAN_HPP_DIR}")
+
+    # Define Android Vulkan platform
+    add_definitions(-DVK_USE_PLATFORM_ANDROID_KHR)
+endif()
+
+# --------------------------------------------------------------------------
+# KleidiAI - use local copy to avoid network download during build
+# --------------------------------------------------------------------------
+if(GGML_CPU_KLEIDIAI AND ANDROID)
+    # Get absolute path to local KleidiAI (lightway/third_party/kleidiai)
+    get_filename_component(KLEIDIAI_LOCAL_PATH
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../../../third_party/kleidiai"
+        ABSOLUTE)
+    # Pre-populate FetchContent cache to skip download
+    set(FETCHCONTENT_SOURCE_DIR_KLEIDIAI_DOWNLOAD "${KLEIDIAI_LOCAL_PATH}" CACHE PATH "" FORCE)
+    message(STATUS "Using local KleidiAI from: ${KLEIDIAI_LOCAL_PATH}")
+endif()
+
+# --------------------------------------------------------------------------
 # AI Chat library
 # --------------------------------------------------------------------------
 
@@ -19,7 +45,7 @@ if(DEFINED ANDROID_ABI)
     message(STATUS "Detected Android ABI: ${ANDROID_ABI}")
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         set(GGML_SYSTEM_ARCH "ARM")
-        set(GGML_CPU_KLEIDIAI OFF)
+        set(GGML_CPU_KLEIDIAI ON)
         set(GGML_OPENMP ON)
     elseif(ANDROID_ABI STREQUAL "x86_64")
         set(GGML_SYSTEM_ARCH "x86")

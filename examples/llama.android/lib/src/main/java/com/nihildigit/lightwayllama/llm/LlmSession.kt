@@ -94,6 +94,7 @@ class LlmSession(
     fun load() {
         check(modelPath.isFile) { "modelPath must be a file: $modelPath" }
         runBlocking {
+            engine.updateGpuLayers(runtimeConfig.nGpuLayers)
             engine.updateContextLength(runtimeConfig.contextLength)
             engine.loadModel(modelPath.absolutePath)
         }
@@ -149,6 +150,7 @@ class LlmSession(
             val repeatPenalty = obj.optDouble("repeat_penalty", runtimeConfig.repeatPenalty.toDouble()).toFloat()
             val contextLength = obj.optInt("context_length", runtimeConfig.contextLength)
             val maxTokens = obj.optInt("max_new_tokens", runtimeConfig.maxNewTokens)
+            val nGpuLayers = obj.optInt("n_gpu_layers", runtimeConfig.nGpuLayers)
 
             runtimeConfig = runtimeConfig.copy(
                 contextLength = contextLength,
@@ -159,7 +161,8 @@ class LlmSession(
                 minP = minP,
                 repeatPenalty = repeatPenalty,
                 chatTemplate = chatTemplate ?: runtimeConfig.chatTemplate,
-                enableThinking = enableThinking
+                enableThinking = enableThinking,
+                nGpuLayers = nGpuLayers
             )
             maxNewTokens = runtimeConfig.maxNewTokens
             applyRuntimeConfig()
