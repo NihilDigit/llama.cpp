@@ -1,10 +1,10 @@
-package com.arm.aichat.internal
+package com.nihildigit.lightwayllama.internal
 
 import android.content.Context
 import android.util.Log
-import com.arm.aichat.InferenceEngine
-import com.arm.aichat.UnsupportedArchitectureException
-import com.arm.aichat.internal.InferenceEngineImpl.Companion.getInstance
+import com.nihildigit.lightwayllama.InferenceEngine
+import com.nihildigit.lightwayllama.UnsupportedArchitectureException
+import com.nihildigit.lightwayllama.internal.InferenceEngineImpl.Companion.getInstance
 import dalvik.annotation.optimization.FastNative
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -101,7 +101,46 @@ internal class InferenceEngineImpl private constructor(
     private external fun processUserPrompt(userPrompt: String, predictLength: Int): Int
 
     @FastNative
+    private external fun processStructuredPrompt(
+        messagesJson: String,
+        toolsJson: String?,
+        predictLength: Int,
+        enableThinking: Boolean
+    ): Int
+
+    @FastNative
+    private external fun renderChatTemplate(
+        messagesJson: String,
+        toolsJson: String?,
+        enableThinking: Boolean
+    ): String?
+
+    @FastNative
+    private external fun getLastPromptTokenCount(): Int
+
+    @FastNative
+    private external fun getLastParsedAssistantMessage(): String?
+
+    @FastNative
     private external fun generateNextToken(): String?
+
+    @FastNative
+    private external fun resetContext()
+
+    @FastNative
+    private external fun updateSampling(
+        temperature: Float,
+        topP: Float,
+        topK: Int,
+        minP: Float,
+        repeatPenalty: Float
+    )
+
+    @FastNative
+    private external fun updateChatTemplate(chatTemplate: String?)
+
+    @FastNative
+    private external fun setContextLength(nCtx: Int)
 
     @FastNative
     private external fun unload()
@@ -116,6 +155,16 @@ internal class InferenceEngineImpl private constructor(
     private var _readyForSystemPrompt = false
     @Volatile
     private var _cancelGeneration = false
+    @Volatile
+    private var lastPromptTokens: Int = 0
+    @Volatile
+    private var lastGeneratedTokens: Int = 0
+    @Volatile
+    private var lastPrefillTimeUs: Long = 0
+    @Volatile
+    private var lastDecodeTimeUs: Long = 0
+    @Volatile
+    private var lastParsedAssistantJson: String? = null
 
     /**
      * Single-threaded coroutine dispatcher & scope for LLama asynchronous operations
@@ -254,6 +303,115 @@ internal class InferenceEngineImpl private constructor(
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "Error during generation!", e)
+            _state.value = InferenceEngine.State.Error(e)
+            throw e
+        }
+    }.flowOn(llamaDispatcher)
+
+    internal val lastPromptTokenCount: Int
+        get() = lastPromptTokens
+
+    internal val lastGeneratedTokenCount: Int
+        get() = lastGeneratedTokens
+
+    internal val lastPrefillDurationUs: Long
+        get() = lastPrefillTimeUs
+
+    internal val lastDecodeDurationUs: Long
+        get() = lastDecodeTimeUs
+
+    internal val lastParsedAssistantMessage: String?
+        get() = lastParsedAssistantJson
+
+    internal fun resetConversation() {
+        runBlocking(llamaDispatcher) {
+            resetContext()
+        }
+    }
+
+    internal fun cancelGeneration() {
+        _cancelGeneration = true
+    }
+
+    internal fun updateSamplingParams(
+        temperature: Float,
+        topP: Float,
+        topK: Int,
+        minP: Float,
+        repeatPenalty: Float
+    ) {
+        runBlocking(llamaDispatcher) {
+            updateSampling(temperature, topP, topK, minP, repeatPenalty)
+        }
+    }
+
+    internal fun updateChatTemplateOverride(chatTemplate: String?) {
+        runBlocking(llamaDispatcher) {
+            updateChatTemplate(chatTemplate)
+        }
+    }
+
+    internal fun updateContextLength(nCtx: Int) {
+        runBlocking(llamaDispatcher) {
+            setContextLength(nCtx)
+        }
+    }
+
+    internal fun renderChatTemplatePrompt(
+        messagesJson: String,
+        toolsJson: String?,
+        enableThinking: Boolean
+    ): String = runBlocking(llamaDispatcher) {
+        renderChatTemplate(messagesJson, toolsJson, enableThinking).orEmpty()
+    }
+
+    internal fun sendStructuredPrompt(
+        messagesJson: String,
+        toolsJson: String?,
+        predictLength: Int,
+        enableThinking: Boolean
+    ): Flow<String> = flow {
+        check(_state.value is InferenceEngine.State.ModelReady) {
+            "Structured prompt discarded due to: ${_state.value.javaClass.simpleName}"
+        }
+
+        try {
+            _cancelGeneration = false
+            _state.value = InferenceEngine.State.ProcessingUserPrompt
+            val prefillStart = System.nanoTime()
+            processStructuredPrompt(messagesJson, toolsJson, predictLength, enableThinking).let { result ->
+                if (result != 0) {
+                    Log.e(TAG, "Failed to process structured prompt: $result")
+                    return@flow
+                }
+            }
+            lastPrefillTimeUs = (System.nanoTime() - prefillStart) / 1_000
+            lastPromptTokens = getLastPromptTokenCount()
+
+            _state.value = InferenceEngine.State.Generating
+            lastGeneratedTokens = 0
+            val decodeStart = System.nanoTime()
+            while (!_cancelGeneration) {
+                generateNextToken()?.let { utf8token ->
+                    lastGeneratedTokens += 1
+                    if (utf8token.isNotEmpty()) emit(utf8token)
+                } ?: break
+            }
+            lastDecodeTimeUs = (System.nanoTime() - decodeStart) / 1_000
+            lastParsedAssistantJson = getLastParsedAssistantMessage()
+
+            if (_cancelGeneration) {
+                Log.i(TAG, "Structured generation aborted per requested.")
+            } else {
+                Log.i(TAG, "Structured generation complete. Awaiting next prompt...")
+            }
+            _state.value = InferenceEngine.State.ModelReady
+        } catch (e: CancellationException) {
+            Log.i(TAG, "Structured generation flow cancelled.")
+            _state.value = InferenceEngine.State.ModelReady
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during structured generation!", e)
             _state.value = InferenceEngine.State.Error(e)
             throw e
         }

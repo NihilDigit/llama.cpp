@@ -1,10 +1,10 @@
-package com.arm.aichat.internal.gguf
+package com.nihildigit.lightwayllama.internal.gguf
 
 import android.content.Context
 import android.net.Uri
-import com.arm.aichat.gguf.GgufMetadata
-import com.arm.aichat.gguf.GgufMetadataReader
-import com.arm.aichat.gguf.InvalidFileFormatException
+import com.nihildigit.lightwayllama.gguf.GgufMetadata
+import com.nihildigit.lightwayllama.gguf.GgufMetadataReader
+import com.nihildigit.lightwayllama.gguf.InvalidFileFormatException
 import java.io.File
 import java.io.IOException
 import java.io.InputStream

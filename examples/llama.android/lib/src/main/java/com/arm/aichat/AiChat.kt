@@ -1,7 +1,7 @@
-package com.arm.aichat
+package com.nihildigit.lightwayllama
 
 import android.content.Context
-import com.arm.aichat.internal.InferenceEngineImpl
+import com.nihildigit.lightwayllama.internal.InferenceEngineImpl
 
 /**
  * Main entry point for Arm's AI Chat library.

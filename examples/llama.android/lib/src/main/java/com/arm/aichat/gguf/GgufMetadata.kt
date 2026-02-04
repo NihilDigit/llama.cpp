@@ -1,4 +1,4 @@
-package com.arm.aichat.gguf
+package com.nihildigit.lightwayllama.gguf
 
 import java.io.IOException
 

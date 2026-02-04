@@ -1,6 +1,6 @@
-package com.arm.aichat
+package com.nihildigit.lightwayllama
 
-import com.arm.aichat.InferenceEngine.State
+import com.nihildigit.lightwayllama.InferenceEngine.State
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
