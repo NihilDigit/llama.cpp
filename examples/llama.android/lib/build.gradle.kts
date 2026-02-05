@@ -31,11 +31,11 @@ android {
                 arguments += "-DGGML_NATIVE=OFF"
                 arguments += "-DGGML_BACKEND_DL=ON"
                 arguments += "-DGGML_CPU_ALL_VARIANTS=ON"
-                arguments += "-DGGML_CPU_KLEIDIAI=ON"
+                arguments += "-DGGML_CPU_KLEIDIAI=OFF"
+                arguments += "-DGGML_CPU_REPACK=OFF"
                 arguments += "-DGGML_LLAMAFILE=OFF"
-                // OpenCL GPU acceleration (optimized for Adreno)
+                // OpenCL GPU acceleration for Adreno GPUs
                 arguments += "-DGGML_OPENCL=ON"
-                arguments += "-DGGML_OPENCL_USE_ADRENO_KERNELS=ON"
             }
         }
         aarMetadata {
