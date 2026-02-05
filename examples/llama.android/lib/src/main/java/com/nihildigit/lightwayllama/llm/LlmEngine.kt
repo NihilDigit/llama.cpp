@@ -179,6 +179,20 @@ object LlmEngine {
     // ===== KV Cache 管理 =====
 
     /**
+     * 预热 Stem（System Prompt + Tools），将其 KV Cache 保留在内存中。
+     * 后续调用 pruneToStem() 可以快速回到这个状态。
+     *
+     * @param messagesJson 包含 system prompt 的消息 JSON
+     * @param toolsJson 工具定义 JSON（可选）
+     * @return 0 表示成功，非 0 表示失败
+     */
+    fun warmupStem(messagesJson: String, toolsJson: String?): Int {
+        val impl = engine ?: return -1
+        check(modelLoaded) { "Model not loaded" }
+        return impl.warmupStemContext(messagesJson, toolsJson)
+    }
+
+    /**
      * 剪枝到 Stem 位置（清除 Stem 之后的 KV Cache）
      */
     fun pruneToStem() {

@@ -714,12 +714,14 @@ Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_processStructured
         // 记录复用的 token 数
         g_last_reused_tokens = n_past;
 
+        // 记录实际 prefill 的 token 数（不包括复用的）
+        g_last_prompt_tokens = (int) n_new;
+
         // 更新状态
         g_last_prompt_tokens_vec = std::move(new_tokens);
         g_last_tools_hash = new_tools_hash;
     }
 
-    g_last_prompt_tokens = current_position;
     stop_generation_position = current_position + DEFAULT_MAX_NEW_TOKENS;
 
     rebuild_sampler(&g_last_chat_params);
