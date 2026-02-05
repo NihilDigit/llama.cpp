@@ -144,11 +144,11 @@ static llama_context *init_context(llama_model *model, const int n_ctx = DEFAULT
     ctx_params.n_ubatch = BATCH_SIZE;
     ctx_params.n_threads = n_threads;
     ctx_params.n_threads_batch = n_threads;
-    // KV cache quantization: Q8_0 provides good balance between memory and quality.
-    // Q4_0 causes ~3.7% quality degradation, Q8_0 is <1%.
-    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
-    ctx_params.type_k = GGML_TYPE_Q8_0;
-    ctx_params.type_v = GGML_TYPE_Q8_0;
+    // Disable flash attention for OpenCL compatibility (causes crashes on some GPUs)
+    // When flash_attn is disabled, KV cache must use F16 (quantized KV requires flash_attn)
+    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    ctx_params.type_k = GGML_TYPE_F16;
+    ctx_params.type_v = GGML_TYPE_F16;
     auto *context = llama_init_from_model(g_model, ctx_params);
     if (context == nullptr) {
         LOG_DIAGe("%s: llama_new_context_with_model() returned null)", __func__);
