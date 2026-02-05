@@ -9,9 +9,15 @@
 
 #pragma once
 #include <android/log.h>
+#include <cstring>
+#include <string>
 
 #ifndef LOG_TAG
 #define LOG_TAG "ai-chat"
+#endif
+
+#ifndef LOG_DIAG_TAG
+#define LOG_DIAG_TAG "[LLAMA_DIAG] "
 #endif
 
 #ifndef LOG_MIN_LEVEL
@@ -42,6 +48,12 @@ static inline int ai_should_log(int prio) {
 #define LOGw(...)   do { if (ai_should_log(ANDROID_LOG_WARN )) __android_log_print(ANDROID_LOG_WARN , LOG_TAG, __VA_ARGS__); } while (0)
 #define LOGe(...)   do { if (ai_should_log(ANDROID_LOG_ERROR)) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__); } while (0)
 
+#define LOG_DIAGv(...) do { if (ai_should_log(ANDROID_LOG_VERBOSE)) __android_log_print(ANDROID_LOG_VERBOSE, LOG_TAG, LOG_DIAG_TAG __VA_ARGS__); } while (0)
+#define LOG_DIAGd(...) do { if (ai_should_log(ANDROID_LOG_DEBUG))   __android_log_print(ANDROID_LOG_DEBUG,   LOG_TAG, LOG_DIAG_TAG __VA_ARGS__); } while (0)
+#define LOG_DIAGi(...) do { if (ai_should_log(ANDROID_LOG_INFO ))   __android_log_print(ANDROID_LOG_INFO,    LOG_TAG, LOG_DIAG_TAG __VA_ARGS__); } while (0)
+#define LOG_DIAGw(...) do { if (ai_should_log(ANDROID_LOG_WARN ))   __android_log_print(ANDROID_LOG_WARN,    LOG_TAG, LOG_DIAG_TAG __VA_ARGS__); } while (0)
+#define LOG_DIAGe(...) do { if (ai_should_log(ANDROID_LOG_ERROR))   __android_log_print(ANDROID_LOG_ERROR,   LOG_TAG, LOG_DIAG_TAG __VA_ARGS__); } while (0)
+
 static inline int android_log_prio_from_ggml(enum ggml_log_level level) {
     switch (level) {
         case GGML_LOG_LEVEL_ERROR: return ANDROID_LOG_ERROR;
@@ -57,5 +69,13 @@ static inline void aichat_android_log_callback(enum ggml_log_level level,
                                               void* /*user*/) {
     const int prio = android_log_prio_from_ggml(level);
     if (!ai_should_log(prio)) return;
-    __android_log_write(prio, LOG_TAG, text);
+    if (text == nullptr) {
+        return;
+    }
+    if (std::strncmp(text, LOG_DIAG_TAG, std::strlen(LOG_DIAG_TAG)) == 0) {
+        __android_log_write(prio, LOG_TAG, text);
+        return;
+    }
+    std::string msg = std::string(LOG_DIAG_TAG) + text;
+    __android_log_write(prio, LOG_TAG, msg.c_str());
 }

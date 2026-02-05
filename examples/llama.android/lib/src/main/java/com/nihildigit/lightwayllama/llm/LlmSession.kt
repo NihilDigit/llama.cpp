@@ -248,16 +248,62 @@ class LlmSession(
         reset()
     }
 
-    // === Stem Context compatibility stubs ===
-    fun getCurrentSeqLen(): Long = 0L
+    // === Stem Context Management ===
 
+    /**
+     * 预热 Stem（System Prompt + Tools），将其 KV Cache 保留在内存中。
+     * 后续调用 pruneToStem() 可以快速回到这个状态。
+     *
+     * @param messages 包含 system prompt 的消息列表
+     * @param toolsJson 工具定义 JSON（可选）
+     * @return 0 表示成功，非 0 表示失败
+     */
+    fun warmupStem(messages: List<StructuredChatMessage>, toolsJson: String? = null): Int {
+        val messagesJson = JSONArray().apply {
+            for (msg in messages) {
+                put(msg.toJson())
+            }
+        }.toString()
+        return engine.warmupStemContext(messagesJson, toolsJson)
+    }
+
+    /**
+     * 清除 Stem 之后的所有 KV Cache，回到 Stem 状态。
+     * 用于开始新任务时快速复用 System Prompt + Tools 的 KV Cache。
+     */
+    fun pruneToStem() {
+        engine.pruneToStemContext()
+    }
+
+    /**
+     * 获取当前 Stem 的 token 位置。
+     * @return Stem 结束位置（token 数量），0 表示没有预热的 Stem
+     */
+    fun getStemPosition(): Int {
+        return engine.getStemContextPosition()
+    }
+
+    /**
+     * 获取当前序列长度（token 数量）
+     */
+    fun getCurrentSeqLen(): Long = engine.getStemContextPosition().toLong()
+
+    /**
+     * 清除指定范围的历史（目前实现为完全重置）
+     */
     fun eraseHistory(begin: Long, end: Long = 0L) {
-        reset()
+        if (begin == 0L) {
+            reset()
+        } else {
+            pruneToStem()
+        }
     }
 
     fun prefillOnly(prompt: String): Long = 0L
 
-    fun prefillOnlyStructured(messages: List<StructuredChatMessage>, toolsJson: String?): Long = 0L
+    fun prefillOnlyStructured(messages: List<StructuredChatMessage>, toolsJson: String?): Long {
+        return warmupStem(messages, toolsJson).toLong()
+    }
 
     fun prepareSaveStemCache(filename: String) {}
 
