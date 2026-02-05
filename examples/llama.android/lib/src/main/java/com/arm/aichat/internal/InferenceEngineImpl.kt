@@ -154,6 +154,19 @@ internal class InferenceEngineImpl private constructor(
     @FastNative
     private external fun shutdown()
 
+    // === Stem Context Management ===
+    @FastNative
+    private external fun warmupStem(messagesJson: String, toolsJson: String?): Int
+
+    @FastNative
+    private external fun pruneToStem()
+
+    @FastNative
+    private external fun getStemPosition(): Int
+
+    @FastNative
+    private external fun getLastReusedTokens(): Int
+
     private val _state =
         MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized)
     override val state: StateFlow<InferenceEngine.State> = _state.asStateFlow()
@@ -381,6 +394,32 @@ internal class InferenceEngineImpl private constructor(
         enableThinking: Boolean
     ): String = runBlocking(llamaDispatcher) {
         renderChatTemplate(messagesJson, toolsJson, enableThinking).orEmpty()
+    }
+
+    // === Stem Context Management ===
+
+    internal fun warmupStemContext(messagesJson: String, toolsJson: String?): Int {
+        return runBlocking(llamaDispatcher) {
+            warmupStem(messagesJson, toolsJson)
+        }
+    }
+
+    internal fun pruneToStemContext() {
+        runBlocking(llamaDispatcher) {
+            pruneToStem()
+        }
+    }
+
+    internal fun getStemContextPosition(): Int {
+        return runBlocking(llamaDispatcher) {
+            getStemPosition()
+        }
+    }
+
+    internal fun getLastReusedTokenCount(): Int {
+        return runBlocking(llamaDispatcher) {
+            getLastReusedTokens()
+        }
     }
 
     internal fun sendStructuredPrompt(
