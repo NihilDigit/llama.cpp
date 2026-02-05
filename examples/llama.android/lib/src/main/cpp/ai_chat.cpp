@@ -57,6 +57,13 @@ static std::string                        g_last_assistant_raw;
 static std::string                        g_last_assistant_parsed_json;
 static std::string                        g_chat_template_override;
 
+// === Incremental Inference State ===
+static llama_tokens                       g_last_prompt_tokens_vec;  // 上次 tokenize 结果
+static llama_pos                          g_stem_position = 0;       // Stem 结束位置
+static size_t                             g_last_tools_hash = 0;     // Tools JSON 哈希
+static bool                               g_stem_warmed = false;     // Stem 是否已预热
+static size_t                             g_last_reused_tokens = 0;  // 最后一次推理复用的 token 数
+
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_init(JNIEnv *env, jobject /*unused*/, jstring nativeLibDir) {
@@ -353,6 +360,12 @@ static void reset_long_term_states(const bool clear_kv_cache = true) {
     system_prompt_position = 0;
     current_position = 0;
 
+    // 清除增量推理状态
+    g_last_prompt_tokens_vec.clear();
+    g_stem_position = 0;
+    g_last_tools_hash = 0;
+    g_stem_warmed = false;
+
     if (clear_kv_cache)
         llama_memory_clear(llama_get_memory(g_context), false);
 }
@@ -372,6 +385,24 @@ static void shift_context() {
     llama_memory_seq_add(llama_get_memory(g_context), 0, system_prompt_position + n_discard, current_position, -n_discard);
     current_position -= n_discard;
     LOG_DIAGi("%s: Context shifting done! Current position: %d", __func__, current_position);
+}
+
+// === Incremental Inference Helpers ===
+
+// 计算两个 token 序列的公共前缀长度
+static size_t get_common_prefix(const llama_tokens& a, const llama_tokens& b) {
+    const size_t max_idx = std::min(a.size(), b.size());
+    for (size_t i = 0; i < max_idx; ++i) {
+        if (a[i] != b[i]) {
+            return i;
+        }
+    }
+    return max_idx;
+}
+
+// 字符串哈希（用于检测 tools 变化）
+static size_t hash_string(const std::string& str) {
+    return std::hash<std::string>{}(str);
 }
 
 static std::string chat_add_and_format(const std::string &role, const std::string &content) {
@@ -622,8 +653,6 @@ Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_processStructured
 
     std::string full_prompt = params.prompt;
 
-    reset_long_term_states(true);
-
     const bool has_chat_template = common_chat_templates_was_explicit(g_chat_templates.get());
 
     LOG_DIAGi("%s: messages=%zu tools=%zu full_len=%zu",
@@ -636,18 +665,58 @@ Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_processStructured
     const int max_batch_size = llama_n_ctx(g_context) - OVERFLOW_HEADROOM;
 
     if (!full_prompt.empty()) {
-        auto tokens = tokenize_prompt(full_prompt);
-        if ((int) tokens.size() > max_batch_size) {
+        auto new_tokens = tokenize_prompt(full_prompt);
+        if ((int) new_tokens.size() > max_batch_size) {
             LOG_DIAGe("%s: Prompt too long for context! %d tokens, max: %d",
-                      __func__, (int) tokens.size(), max_batch_size);
+                      __func__, (int) new_tokens.size(), max_batch_size);
             return 2;
         }
-        if (decode_tokens_in_batches(g_context, g_batch, tokens, current_position, true)) {
-            LOG_DIAGe("%s: llama_decode() failed during prompt prefill", __func__);
-            return 3;
+
+        // === Incremental Inference Logic ===
+        // 检测 tools 是否变化（变化则需要完全重新 prefill）
+        const size_t new_tools_hash = hash_string(tools_str);
+        const bool tools_changed = (new_tools_hash != g_last_tools_hash);
+
+        // 计算公共前缀长度
+        size_t n_past = 0;
+        if (!tools_changed && !g_last_prompt_tokens_vec.empty()) {
+            n_past = get_common_prefix(g_last_prompt_tokens_vec, new_tokens);
         }
-        LOG_DIAGi("%s: prefill tokens=%d", __func__, (int) tokens.size());
-        current_position += (int) tokens.size();
+
+        // 如果 tools 变化或没有公共前缀，完全重新开始
+        if (tools_changed || n_past == 0) {
+            LOG_DIAGi("%s: Full prefill (tools_changed=%d, n_past=%zu)",
+                      __func__, tools_changed, n_past);
+            reset_long_term_states(true);
+            n_past = 0;
+        } else if (n_past < (size_t) current_position) {
+            // 清除 [n_past, end) 的 KV Cache
+            LOG_DIAGi("%s: Incremental prefill: clearing KV cache from %zu to %d",
+                      __func__, n_past, current_position);
+            llama_memory_seq_rm(llama_get_memory(g_context), 0, (llama_pos) n_past, current_position);
+            current_position = (llama_pos) n_past;
+        }
+
+        // 只 Prefill 新增的 token
+        const size_t n_new = new_tokens.size() - n_past;
+        if (n_new > 0) {
+            llama_tokens new_part(new_tokens.begin() + n_past, new_tokens.end());
+            if (decode_tokens_in_batches(g_context, g_batch, new_part, current_position, true)) {
+                LOG_DIAGe("%s: llama_decode() failed during prompt prefill", __func__);
+                return 3;
+            }
+            current_position += (int) n_new;
+        }
+
+        LOG_DIAGi("%s: prefill total=%zu reused=%zu new=%zu",
+                  __func__, new_tokens.size(), n_past, n_new);
+
+        // 记录复用的 token 数
+        g_last_reused_tokens = n_past;
+
+        // 更新状态
+        g_last_prompt_tokens_vec = std::move(new_tokens);
+        g_last_tools_hash = new_tools_hash;
     }
 
     g_last_prompt_tokens = current_position;
@@ -941,4 +1010,136 @@ extern "C"
 JNIEXPORT void JNICALL
 Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_shutdown(JNIEnv *, jobject /*unused*/) {
     llama_backend_free();
+}
+
+// === Stem Context Management ===
+
+extern "C"
+JNIEXPORT jint JNICALL
+Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_warmupStem(
+        JNIEnv *env,
+        jobject /*unused*/,
+        jstring jmessages_json,
+        jstring jtools_json
+) {
+    if (jmessages_json == nullptr) {
+        LOG_DIAGe("%s: messages json is null", __func__);
+        return 1;
+    }
+
+    const auto *messages_cstr = env->GetStringUTFChars(jmessages_json, nullptr);
+    std::string messages_str(messages_cstr ? messages_cstr : "");
+    env->ReleaseStringUTFChars(jmessages_json, messages_cstr);
+
+    std::string tools_str;
+    if (jtools_json != nullptr) {
+        const auto *tools_cstr = env->GetStringUTFChars(jtools_json, nullptr);
+        tools_str.assign(tools_cstr ? tools_cstr : "");
+        env->ReleaseStringUTFChars(jtools_json, tools_cstr);
+    }
+
+    std::vector<common_chat_msg> messages;
+    std::vector<common_chat_tool> tools;
+    try {
+        messages = common_chat_msgs_parse_oaicompat(json::parse(messages_str));
+    } catch (const std::exception & e) {
+        LOG_DIAGe("%s: failed to parse messages: %s", __func__, e.what());
+        return 1;
+    }
+
+    if (!tools_str.empty()) {
+        try {
+            tools = common_chat_tools_parse_oaicompat(json::parse(tools_str));
+        } catch (const std::exception & e) {
+            LOG_DIAGe("%s: failed to parse tools: %s", __func__, e.what());
+            return 1;
+        }
+    }
+
+    common_chat_params params;
+    try {
+        params = render_chat_params(messages, tools, /* add_generation_prompt= */ false, /* enable_thinking= */ false);
+    } catch (const std::exception & e) {
+        LOG_DIAGe("%s: failed to render chat template: %s", __func__, e.what());
+        return 1;
+    }
+
+    std::string stem_prompt = params.prompt;
+    const bool has_chat_template = common_chat_templates_was_explicit(g_chat_templates.get());
+
+    // 完全重置状态
+    reset_long_term_states(true);
+    reset_short_term_states();
+
+    auto stem_tokens = common_tokenize(g_context, stem_prompt, has_chat_template, has_chat_template);
+    const int max_batch_size = llama_n_ctx(g_context) - OVERFLOW_HEADROOM;
+
+    if ((int) stem_tokens.size() > max_batch_size) {
+        LOG_DIAGe("%s: Stem too long for context! %d tokens, max: %d",
+                  __func__, (int) stem_tokens.size(), max_batch_size);
+        return 2;
+    }
+
+    // Prefill stem tokens
+    if (decode_tokens_in_batches(g_context, g_batch, stem_tokens, 0, false)) {
+        LOG_DIAGe("%s: llama_decode() failed during stem prefill", __func__);
+        return 3;
+    }
+
+    // 记录 stem 状态
+    g_stem_position = (llama_pos) stem_tokens.size();
+    current_position = g_stem_position;
+    g_last_prompt_tokens_vec = std::move(stem_tokens);
+    g_last_tools_hash = hash_string(tools_str);
+    g_stem_warmed = true;
+
+    LOG_DIAGi("%s: Stem warmed up with %d tokens", __func__, g_stem_position);
+    return 0;
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_pruneToStem(
+        JNIEnv * /*env*/,
+        jobject /*unused*/
+) {
+    if (!g_stem_warmed || g_stem_position == 0) {
+        LOG_DIAGw("%s: No stem to prune to (stem_warmed=%d, stem_pos=%d)",
+                  __func__, g_stem_warmed, g_stem_position);
+        return;
+    }
+
+    if (current_position > g_stem_position) {
+        LOG_DIAGi("%s: Pruning KV cache from %d to %d",
+                  __func__, g_stem_position, current_position);
+        llama_memory_seq_rm(llama_get_memory(g_context), 0, g_stem_position, current_position);
+        current_position = g_stem_position;
+
+        // 截断 token 历史到 stem 位置
+        if (g_last_prompt_tokens_vec.size() > (size_t) g_stem_position) {
+            g_last_prompt_tokens_vec.resize(g_stem_position);
+        }
+    }
+
+    // 重置短期状态
+    reset_short_term_states();
+    LOG_DIAGi("%s: Pruned to stem position %d", __func__, g_stem_position);
+}
+
+extern "C"
+JNIEXPORT jint JNICALL
+Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_getStemPosition(
+        JNIEnv * /*env*/,
+        jobject /*unused*/
+) {
+    return g_stem_position;
+}
+
+extern "C"
+JNIEXPORT jint JNICALL
+Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_getLastReusedTokens(
+        JNIEnv * /*env*/,
+        jobject /*unused*/
+) {
+    return (jint) g_last_reused_tokens;
 }
