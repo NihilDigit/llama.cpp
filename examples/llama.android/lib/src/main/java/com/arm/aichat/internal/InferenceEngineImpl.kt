@@ -439,6 +439,8 @@ internal class InferenceEngineImpl private constructor(
             processStructuredPrompt(messagesJson, toolsJson, predictLength, enableThinking).let { result ->
                 if (result != 0) {
                     Log.e(TAG, "Failed to process structured prompt: $result")
+                    // Ensure engine can accept next request after prefill failure.
+                    _state.value = InferenceEngine.State.ModelReady
                     return@flow
                 }
             }

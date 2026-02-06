@@ -187,6 +187,7 @@ static void rebuild_sampler(const common_chat_params * chat_params = nullptr) {
     }
     if (g_sampler != nullptr) {
         common_sampler_free(g_sampler);
+        g_sampler = nullptr;
     }
     g_sampler = common_sampler_init(g_model, sparams);
 }
@@ -1001,11 +1002,23 @@ Java_com_nihildigit_lightwayllama_internal_InferenceEngineImpl_unload(JNIEnv * /
     reset_short_term_states();
 
     // Free up resources
-    common_sampler_free(g_sampler);
+    if (g_sampler != nullptr) {
+        common_sampler_free(g_sampler);
+        g_sampler = nullptr;
+    }
     g_chat_templates.reset();
-    llama_batch_free(g_batch);
-    llama_free(g_context);
-    llama_model_free(g_model);
+    if (g_batch.token != nullptr) {
+        llama_batch_free(g_batch);
+        g_batch = {};
+    }
+    if (g_context != nullptr) {
+        llama_free(g_context);
+        g_context = nullptr;
+    }
+    if (g_model != nullptr) {
+        llama_model_free(g_model);
+        g_model = nullptr;
+    }
 }
 
 extern "C"
